@@ -12,6 +12,7 @@ AutoPlanAgent 是一个基于 **LangGraph** 构建的高级数据分析智能体
   - **专业可视化**: 使用 Matplotlib 和 Seaborn 生成高质量图表。
 - **状态持久化 (Persistence)**: 支持 Checkpointer 机制，即使系统中断也能从断点恢复任务状态。
 - **一键报告 (Auto-Reporting)**: 自动汇总执行结果，生成包含关键发现、业务建议和图表附录的 Markdown 报告。
+- **API 服务 (RESTful API)**: 基于 FastAPI 构建，支持通过 API 启动任务、提交反馈和查询状态，便于集成到 Web 应用中。
 
 ## 🏗️ 项目架构
 
@@ -59,39 +60,66 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_api_key_here
 OPENAI_API_BASE=https://api.openai.com/v1 # 或其他代理地址
 MODEL_NAME=gpt-4o # 推荐使用能力较强的模型
+
+# 可选：配置 ModelScope 或 SiliconFlow (用于 agent/utils.py 中的自定义加载)
+MODELSCOPE_API_KEYS=key1,key2
+SILICONFLOW_API_KEYS=key1,key2
 ```
 
 ### 3. 数据准备
 
-初始化演示数据库：
+根据你的需求初始化数据库：
 
 ```bash
-python init_db.py
-python prepare_pv_data.py
+# 初始化演示销售数据库 (SQLite)
+python data/init_db.py
+
+# 初始化光伏行业示例数据 (SQLite)
+python data/init_pv_db_sqlite.py
+
+# (可选) 如果你使用 MySQL，请配置好环境后运行
+# python data/prepare_pv_data.py
 ```
 
 ### 4. 运行 Agent
 
-你可以通过测试脚本启动分析任务：
+你可以通过以下几种方式启动：
 
+#### 终端测试脚本
 ```bash
+# 直接运行并输出到终端
 python test_agent.py
+
+# 使用 shell 脚本后台运行并记录日志
+chmod +x test.sh
+./test.sh
 ```
+
+#### API 服务
+```bash
+# 启动 FastAPI 服务
+uvicorn app:app --reload
+```
+服务启动后，可以通过 `http://127.0.0.1:8000/docs` 查看 Swagger API 文档。
 
 ## 📂 目录结构
 
 ```text
 ├── agent/
 │   ├── nodes/          # 业务逻辑节点 (理解, 规划, 执行等)
+│   ├── prompts/        # LLM 提示词模板
 │   ├── tools/          # Agent 可调用的工具集 (SQL, Python, Viz)
 │   ├── graph.py        # LangGraph 工作流定义
-│   └── state.py        # 状态 schema 定义
-├── data/               # SQLite 数据库文件
+│   ├── state.py        # 状态 schema 定义
+│   └── utils.py        # 工具函数
+├── data/               # SQLite 数据库及初始化脚本
+├── log/                # 运行日志记录
 ├── reports/            # 生成的分析报告及图片
 │   └── images/         # 自动生成的图表存放目录
-├── log/                # 运行日志记录
-├── utils.py            # LLM 加载、日志配置等工具函数
-├── app.py              # 应用入口 (可选)
+├── templates/          # 报告生成的 Markdown 模板
+├── app.py              # FastAPI 应用入口
+├── test_agent.py       # 命令行测试脚本
+├── test.sh             # 自动化测试运行脚本
 └── requirements.txt    # 依赖列表
 ```
 
@@ -109,6 +137,3 @@ python test_agent.py
 4. **执行阶段**: 自动运行工具并收集结果。
 5. **报告阶段**: 在 `reports/` 目录下生成一份完整的分析报告。
 
-## 📄 许可证
-
-MIT License
