@@ -68,17 +68,22 @@ SILICONFLOW_API_KEYS=key1,key2
 
 ### 3. 数据准备
 
-根据你的需求初始化数据库：
+本项目目前仅支持 MySQL 数据库。请确保你已安装 MySQL 并配置好环境变量。
 
 ```bash
-# 初始化演示销售数据库 (SQLite)
-python data/init_db.py
+# 推荐：使用环境变量配置数据库连接
+export DATABASE_URL="mysql+pymysql://user:password@localhost:3306/test_trae"
+```
 
-# 初始化光伏行业示例数据 (SQLite)
-python data/init_pv_db_sqlite.py
+```bash
+# 方案 A：写入示例数据到 pv_financials
+python data/prepare_pv_data.py
+```
 
-# (可选) 如果你使用 MySQL，请配置好环境后运行
-# python data/prepare_pv_data.py
+```bash
+# 方案 B：通过 AkShare 抓取数据并写入 pv_financials
+pip install akshare
+python data/load_pv_financials_akshare.py --pv-table pv_financials
 ```
 
 ### 4. 运行 Agent
@@ -136,4 +141,3 @@ uvicorn app:app --reload
 3. **反馈阶段**: 展示计划，等待用户输入 "OK"。
 4. **执行阶段**: 自动运行工具并收集结果。
 5. **报告阶段**: 在 `reports/` 目录下生成一份完整的分析报告。
-
