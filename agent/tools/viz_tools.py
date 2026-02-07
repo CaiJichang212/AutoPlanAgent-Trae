@@ -1,9 +1,12 @@
 import matplotlib
-matplotlib.use('Agg') # 使用非交互式后端
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import os
+import json
+import ast
+import re
 from langchain_core.tools import tool
 from typing import Dict, Any
 
@@ -27,36 +30,53 @@ def visualizer(plot_code: str, filename: str) -> str:
     pure_filename = os.path.basename(filename)
     filepath = os.path.join(save_dir, pure_filename)
     
-    # 清理 plot_code，移除可能存在的 plt.savefig 调用，避免冲突
-    import re
+    if isinstance(plot_code, dict):
+        if not filename and "filename" in plot_code:
+            filename = plot_code.get("filename")
+        plot_code = plot_code.get("plot_code", "")
+    if isinstance(plot_code, str) and '"plot_code"' in plot_code:
+        try:
+            embedded = json.loads(plot_code)
+            if not filename and isinstance(embedded, dict):
+                filename = embedded.get("filename", filename)
+            if isinstance(embedded, dict) and "plot_code" in embedded:
+                plot_code = embedded.get("plot_code", "")
+        except Exception:
+            try:
+                embedded = ast.literal_eval(plot_code)
+                if not filename and isinstance(embedded, dict):
+                    filename = embedded.get("filename", filename)
+                if isinstance(embedded, dict) and "plot_code" in embedded:
+                    plot_code = embedded.get("plot_code", "")
+            except Exception:
+                pass
+    if not isinstance(plot_code, str):
+        plot_code = str(plot_code)
+    plot_code = re.sub(r"^```[a-zA-Z]*\n", "", plot_code).replace("```", "")
     plot_code = re.sub(r'plt\.savefig\(.*?\)', '', plot_code)
     
     # 构造完整的执行代码
-    full_code = f"""
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-import platform
-
-# 动态设置中文字体
-system = platform.system()
-if system == 'Darwin':  # macOS
-    fonts = ['Arial Unicode MS', 'PingFang HK', 'Heiti TC', 'sans-serif']
-elif system == 'Windows':
-    fonts = ['SimHei', 'Microsoft YaHei', 'sans-serif']
-else:
-    fonts = ['WenQuanYi Micro Hei', 'Droid Sans Fallback', 'sans-serif']
-
-plt.rcParams['font.sans-serif'] = fonts
-plt.rcParams['axes.unicode_minus'] = False
-sns.set_style("whitegrid", {{"font.sans-serif": fonts}})
-
-{plot_code}
-plt.savefig('{filepath}')
-plt.close()
-"""
+    full_code = "\n".join([
+        "import matplotlib",
+        "matplotlib.use('Agg')",
+        "import matplotlib.pyplot as plt",
+        "import seaborn as sns",
+        "import pandas as pd",
+        "import platform",
+        "system = platform.system()",
+        "if system == 'Darwin':",
+        "    fonts = ['Arial Unicode MS', 'PingFang HK', 'Heiti TC', 'sans-serif']",
+        "elif system == 'Windows':",
+        "    fonts = ['SimHei', 'Microsoft YaHei', 'sans-serif']",
+        "else:",
+        "    fonts = ['WenQuanYi Micro Hei', 'Droid Sans Fallback', 'sans-serif']",
+        "plt.rcParams['font.sans-serif'] = fonts",
+        "plt.rcParams['axes.unicode_minus'] = False",
+        "sns.set_style('whitegrid', {'font.sans-serif': fonts})",
+        plot_code,
+        f"plt.savefig('{filepath}')",
+        "plt.close()"
+    ])
     try:
         from langchain_experimental.utilities import PythonREPL
         repl = PythonREPL()
