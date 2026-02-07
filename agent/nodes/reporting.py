@@ -50,7 +50,9 @@ def generate_report(state: AgentState) -> Dict[str, Any]:
         report_template = "（请根据分析结果生成报告）"
 
     prompt_template = load_prompt("reporting")
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
     prompt = prompt_template.format(
+        current_date=current_date,
         goal=understanding['goal'],
         business_context=understanding['business_context'],
         analysis_results=analysis_results,
