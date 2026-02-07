@@ -7,7 +7,7 @@ def run_test():
     
     # 1. 启动任务
     print("--- 1. 启动任务 ---")
-    query = "分析光伏行业公司基本面情况？"
+    query = "分析光伏行业公司2024-2025年基本面情况？"
     initial_state = {"input": query}
     
     for event in graph.stream(initial_state, config):
