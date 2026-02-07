@@ -16,3 +16,4 @@ pydantic-settings
 statsmodels
 scikit-learn
 scipy
+akshare
