@@ -1,0 +1,59 @@
+当前正在执行步骤: {task}
+使用的工具: {tool}
+
+之前步骤的结果上下文 (JSON 格式):
+{context_summary}
+
+数据库结构信息:
+{db_schema}
+
+请根据以上信息，生成调用工具所需的参数。
+如果是 sql_query，请仅输出 SQL 语句，放在 ```sql 代码块中。
+注意：
+- **MySQL 规范**：如果列名包含特殊字符（如横杠 `-`、空格等），必须使用反引号包围，例如：` `经营性现金流-现金流量净额` `。
+- **列名匹配**：请仔细核对数据库结构中的真实列名，不要凭想象猜测（例如：`pv_financials` 使用的是 `company_name` 而不是 `公司名称`）。
+- **数据关联**：如果 `pv_financials` 的 `report_period` 是 '2024H1'，而其他表的 `report_date` 是 '20231231' 这种格式，请在 JOIN 时考虑这种差异。
+- **日期匹配规范**：
+    1. **严禁盲目猜测日期**（例如：不要在未确认的情况下使用 `20241231`）。
+    2. **优先查询**：如果不确定表中可用的日期，请先执行一个简单的 `SELECT DISTINCT report_date FROM table_name` 来核实。
+    3. **常用映射**：通常 `2024H1` 对应 `20240630`，`2023FY` 对应 `20231231`。
+- **注意**：JOIN 条件中应使用确切的匹配逻辑（如 `l.report_date = '20240630'`），**严禁使用会导致笛卡尔积的模糊 OR 条件**。
+- 请确保 SQL 逻辑严谨，处理好 JOIN 关系。
+
+如果是 python_analysis，请输出完整的 Python 代码，放在 ```python 代码块中。
+注意：
+- **列名一致性**：检查 `context` 中上一步输出的真实字段名。如果上一步 SQL 输出的是 `company_name`，则代码中必须使用 `df['company_name']`，不能使用 `df['公司名称']`。
+- **语法正确性**：确保 Python 代码语法完全正确。
+- **数据加载规范**：
+    1. `sql_query` 的结果通常是 JSON 字符串列表（records）。
+    2. **重要**：如果上一步输出了复杂的 JSON 对象（如 {"summary": ..., "data": [...]}），请确保只加载数据部分，例如：`res = json.loads(context['step1']); df = pd.DataFrame(res['data'])`。
+    3. **严禁**将字典 and 非字典对象混合在同一个列表中传递给 `pd.DataFrame()`，这会导致 `ValueError: Mixing dicts with non-Series`。
+- 转换为 DataFrame 的推荐方法是：`df = pd.DataFrame(json.loads(context['step_id']))`（前提是该步骤只输出了 records 列表）。
+- **如果你的 Python 代码产生的数据需要给后续步骤使用，请务必使用 `print(json.dumps(data_dict))` 输出 JSON 字符串。**
+- **注意：JSON 无法直接序列化 Pandas 的 Timestamp 或 numpy.int64 等对象。请在输出前使用 `.astype(str)` 或 `.tolist()` 进行转换，或者使用 `json.dumps(..., default=str)` 处理。**
+- **示例**: 
+  ```python
+  import json
+  import pandas as pd
+  # 获取上一步的结果并转换
+  df = pd.DataFrame(json.loads(context['step1']))
+  # 处理时间戳以防止序列化失败
+  if 'date' in df.columns:
+      df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+  # 执行分析...
+  result = {"mean": df['amount'].mean(), "data": df.to_dict(orient='records')}
+  # 必须以 JSON 格式输出，方便后续步骤解析
+  print(json.dumps(result))
+  ```
+- **严禁**使用不存在的 `pd.read()` 方法。
+- 请确保在代码最后使用 `print()` 输出关键分析结论，**不要引用未定义的变量**。
+如果是 visualizer，请输出 Python 绘图代码 and 建议的文件名，格式必须为 JSON: 
+```json 
+{
+  "plot_code": "...", 
+  "filename": "..."
+} 
+```
+注意：
+- 绘图时可以直接使用中文标签，系统已配置中文字体支持.
+- **严禁**在 `plot_code` 中包含 `plt.savefig()`，系统会自动处理保存逻辑。

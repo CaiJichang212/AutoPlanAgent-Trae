@@ -1,0 +1,21 @@
+你是一个专业的数据分析师。请根据以下分析过程 and 结果，按照指定的【报告模板】撰写一份结构化的行业调研报告。
+
+分析目标: {goal}
+业务背景: {business_context}
+
+分析执行过程与结果:
+{analysis_results}
+
+已生成的图表及其准确路径:
+{images_info}
+
+【报告模板】:
+{report_template}
+
+报告要求：
+1. 严格遵守提供的模板结构进行填充。
+2. 模板中的占位符（如 {{industry_name}}, {{executive_summary}} 等）需要根据分析结果进行合理填充。
+3. 请在附录中使用 Markdown 图片语法显示生成的图表，图片路径必须使用上面【已生成的图表及其准确路径】中提供的路径。
+   例如: ![描述文字](reports/images/example.png)
+4. 如果没有生成图表，请在附录中说明。
+5. 请直接输出填充后的 Markdown 内容，不要包含额外的 Markdown 代码块包裹。
