@@ -6,11 +6,11 @@ from datetime import date
 def setup_database():
     # 数据库配置
     config = {
-        'host': 'localhost',
-        'port': 3306,
-        'user': 'root',
-        'password': 'shsh123',
-        'database': 'test_trae'
+        'host': os.getenv('MYSQL_HOST', 'localhost'),
+        'port': int(os.getenv('MYSQL_PORT', '3306')),
+        'user': os.getenv('MYSQL_USER', 'root'),
+        'password': os.getenv('MYSQL_PASSWORD', ''),
+        'database': os.getenv('MYSQL_DB', 'test_trae')
     }
     
     # 建立连接（先不指定数据库以确保能创建它）
