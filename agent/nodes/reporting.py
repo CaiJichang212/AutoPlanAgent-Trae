@@ -30,8 +30,8 @@ def generate_report(state: AgentState) -> Dict[str, Any]:
             if step['tool'] == 'visualizer':
                 # 提取路径
                 import re
-                # 匹配完整路径
-                match = re.search(r'(/Users/lzc/Documents/TNTprojectZ/LangChainStudy/AwesomeLangchainTutorial/AutoPlanAgent/AutoPlanAgent-Trae/reports/images/[^ \n\r\t]+)', output_str)
+                # 匹配包含 reports/images/ 的路径
+                match = re.search(r'([^\s]+reports/images/[^\s]+)', output_str)
                 if match:
                     img_path = match.group(0)
                     # 清理可能存在的标点符号
