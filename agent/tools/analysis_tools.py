@@ -20,5 +20,7 @@ def python_analysis(code: str) -> str:
         # 在执行前可以注入一些上下文或全局变量
         result = repl.run(code)
         return result if result else "代码执行成功（无输出）"
-    except Exception as e:
+    except BaseException as e:
+        if isinstance(e, SystemExit):
+            return f"执行终止: {str(e)}"
         return f"执行出错: {str(e)}"
