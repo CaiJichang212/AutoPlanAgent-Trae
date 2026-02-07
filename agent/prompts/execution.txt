@@ -11,39 +11,50 @@
 如果是 sql_query，请仅输出 SQL 语句，放在 ```sql 代码块中。
 注意：
 - **MySQL 规范**：如果列名包含特殊字符（如横杠 `-`、空格等），必须使用反引号包围，例如：` `经营性现金流-现金流量净额` `。
+- **强制性规则：必须确保已探测数据！**
+    1. **检查上下文**：在生成任何涉及具体年份或期间（如 2024）的 SQL 前，先检查 `之前步骤的结果上下文`。如果之前的步骤（如 step1）已经执行过 `SELECT DISTINCT report_period` 或类似的探测操作，**直接使用其结果**来编写正式查询 SQL，**严禁**重复执行探测 SQL。
+    2. **探测逻辑**：只有在上下文**完全没有**关于 `report_period` 格式或可用范围的信息时，才必须先执行 `SELECT DISTINCT report_period FROM table_name ORDER BY report_period DESC LIMIT 5` 进行探测。
+    3. **根据探测结果调整**：如果探测显示 2024 年无数据，但有 2023 年数据，且任务要求分析 2024 年，你应主动查询 2023 年数据作为替代，并在 Python 分析或报告中说明。
+- **字符串拼接**：在 MySQL 中请使用 `CONCAT(a, b)`，**不要**使用 `a || b`。
 - **列名匹配**：请仔细核对数据库结构中的真实列名，不要凭想象猜测（例如：`pv_financials` 使用的是 `company_name` 而不是 `公司名称`）。
+- **ID 警告**：**严禁**盲目使用 `id` 或 `company_id` 进行 JOIN，除非你确定它们是关联的。优先使用 `stock_code`、`ticker`、`股票代码` 等业务主键进行关联。
 - **数据关联**：如果 `pv_financials` 的 `report_period` 是 '2024H1'，而其他表的 `report_date` 是 '20231231' 这种格式，请在 JOIN 时考虑这种差异。
-- **日期匹配规范**：
-    1. **严禁盲目猜测日期**（例如：不要在未确认的情况下使用 `20241231`）。
-    2. **优先查询**：如果不确定表中可用的日期，请先执行一个简单的 `SELECT DISTINCT report_date FROM table_name` 来核实。
-    3. **常用映射**：通常 `2024H1` 对应 `20240630`，`2023FY` 对应 `20231231`。
+- **日期/期间匹配规范**：
+    1. **严禁盲目猜测日期或期间**（例如：不要在未确认的情况下使用 `2024H1` 或 `20241231`）。
+    2. **优先查询**：如果不确定表中可用的日期或期间，请先执行一个简单的 `SELECT DISTINCT report_period FROM table_name` 来核实。
+    3. **格式核对**：核对 `report_period` 的真实格式（是 `2023FY` 还是 `2023Q4` 还是 `2023-12-31`）。
+    4. **数据范围核实**：如果用户要求的年份（如 2024-2025）在数据库中不存在，请查询数据库中**最近可用**的完整年度数据进行分析，并在结果中说明。
+- **查询范围**：除非用户明确要求，不要默认限定年份或季度。可以先用 `SELECT * FROM pv_financials ORDER BY report_period DESC LIMIT 200` 获取样本。
 - **注意**：JOIN 条件中应使用确切的匹配逻辑（如 `l.report_date = '20240630'`），**严禁使用会导致笛卡尔积的模糊 OR 条件**。
+- **回退策略**：如果针对特定年份的查询返回 0 行，请立即尝试查询该表中最晚的 2-3 个年度/季度数据作为替代方案。
 - 请确保 SQL 逻辑严谨，处理好 JOIN 关系。
 
 如果是 python_analysis，请输出完整的 Python 代码，放在 ```python 代码块中。
 注意：
-- **列名一致性**：检查 `context` 中上一步输出的真实字段名。如果上一步 SQL 输出的是 `company_name`，则代码中必须使用 `df['company_name']`，不能使用 `df['公司名称']`。
-- **语法正确性**：确保 Python 代码语法完全正确。
+- **context 变量**：`context` 字典已预解析，其中的值直接就是上一步的结果（dict 或 list），**不需要**再手动执行 `json.loads(context['step1'])`。
 - **数据加载规范**：
-    1. `sql_query` 的结果通常是 JSON 字符串列表（records）。
-    2. **重要**：如果上一步输出了复杂的 JSON 对象（如 {"summary": ..., "data": [...]}），请确保只加载数据部分，例如：`res = json.loads(context['step1']); df = pd.DataFrame(res['data'])`。
-    3. **严禁**将字典 and 非字典对象混合在同一个列表中传递给 `pd.DataFrame()`，这会导致 `ValueError: Mixing dicts with non-Series`。
-- 转换为 DataFrame 的推荐方法是：`df = pd.DataFrame(json.loads(context['step_id']))`（前提是该步骤只输出了 records 列表）。
+    1. `sql_query` 的结果通常是 list[dict]。
+    2. 如果上一步结果包含 `error` 或 `warning` 键，请检查。例如：`res = context['step1']; if isinstance(res, dict) and 'warning' in res: ...`。
+    3. 转换为 DataFrame 的推荐方法是：`res = context['step_id']; df = pd.DataFrame(res if isinstance(res, list) else res.get('data', []))`。
+- **列名一致性**：检查 `context` 中上一步输出的真实字段名。如果上一步 SQL 输出的是 `company_name`，则代码中必须使用 `df['company_name']`。
+- **语法正确性**：确保 Python 代码语法完全正确。
+- **禁止中断**：不要调用 `exit()` 或 `quit()`，如需停止请 `print()` 返回结果。
 - **如果你的 Python 代码产生的数据需要给后续步骤使用，请务必使用 `print(json.dumps(data_dict))` 输出 JSON 字符串。**
 - **注意：JSON 无法直接序列化 Pandas 的 Timestamp 或 numpy.int64 等对象。请在输出前使用 `.astype(str)` 或 `.tolist()` 进行转换，或者使用 `json.dumps(..., default=str)` 处理。**
 - **示例**: 
   ```python
   import json
   import pandas as pd
-  # 获取上一步的结果并转换
-  df = pd.DataFrame(json.loads(context['step1']))
+  # 获取上一步的结果并转换 (注意：不要调用 json.loads)
+  res = context['step1']
+  df = pd.DataFrame(res if isinstance(res, list) else res.get('data', []))
   # 处理时间戳以防止序列化失败
   if 'date' in df.columns:
       df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
   # 执行分析...
   result = {"mean": df['amount'].mean(), "data": df.to_dict(orient='records')}
   # 必须以 JSON 格式输出，方便后续步骤解析
-  print(json.dumps(result))
+  print(json.dumps(result, default=str))
   ```
 - **严禁**使用不存在的 `pd.read()` 方法。
 - 请确保在代码最后使用 `print()` 输出关键分析结论，**不要引用未定义的变量**。
