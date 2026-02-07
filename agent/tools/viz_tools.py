@@ -17,9 +17,10 @@ def visualizer(plot_code: str, filename: str) -> str:
     根据提供的 matplotlib/seaborn 代码生成图表。
     plot_code: 绘图的 python 代码。
     filename: 保存图片的文件名（建议仅提供文件名，如 'plot.png'）。
-    图片将强制保存在 /Users/lzc/Documents/TNTprojectZ/LangChainStudy/AwesomeLangchainTutorial/AutoPlanAgent/AutoPlanAgent-Trae/reports/images 目录下。
     """
-    save_dir = "/Users/lzc/Documents/TNTprojectZ/LangChainStudy/AwesomeLangchainTutorial/AutoPlanAgent/AutoPlanAgent-Trae/reports/images"
+    # 获取项目根目录 (agent/tools/viz_tools.py -> agent/tools/ -> agent/ -> root/)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    save_dir = os.path.join(project_root, "reports", "images")
     os.makedirs(save_dir, exist_ok=True)
     
     # 强制提取纯文件名，防止 LLM 生成路径导致保存位置错误
