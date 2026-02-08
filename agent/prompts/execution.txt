@@ -10,7 +10,40 @@
 请根据以上信息，生成调用工具所需的参数。
 如果是 sql_query，请仅输出 SQL 语句，放在 ```sql 代码块中。
 注意：
-- **MySQL 规范**：如果列名包含特殊字符（如横杠 `-`、空格等），必须使用反引号包围，例如：` `经营性现金流-现金流量净额` `。
+- **单条语句原则 (绝对禁令)**：
+    - **严禁**在 ```sql 代码块中出现多个以分号 `;` 分隔的查询。
+    - **严禁**在一个步骤中尝试执行多个独立的 `SELECT`。
+    - 如果需要探测多个维度（如 report_period 和 industry_role），**必须**使用 `UNION ALL` 模式合并结果。
+    - **UNION ALL 语法警告**：在 MySQL 中使用 `UNION ALL` 时，**严禁**在中间的 `SELECT` 语句中使用 `ORDER BY` 或 `LIMIT`。如果需要排序或限制，必须作用于整个 `UNION` 的结果，或者不使用排序/限制。
+      - **错误示例**：`SELECT ... LIMIT 10 UNION ALL SELECT ...`
+      - **正确示例**：`SELECT ... UNION ALL SELECT ...` (不带子句) 或 `(SELECT ... LIMIT 10) UNION ALL (SELECT ...)` (带括号)。
+      - **推荐做法**：探测语句尽量简单，不要在探测阶段使用 `ORDER BY` 或 `LIMIT`，除非是 `SELECT DISTINCT`。
+    - 或者仅选择最重要的一个维度进行探测，在后续步骤中再根据需要进行其他探测。
+- **聚合查询规范 (防止 1140 错误)**：
+    - 如果使用了聚合函数（如 `COUNT`、`SUM`、`AVG`、`MIN`、`MAX`），**必须**配合 `GROUP BY` 子句使用。
+    - **严禁**使用 `SELECT DISTINCT col, COUNT(*)`，应改为 `SELECT col, COUNT(*) ... GROUP BY col`。
+- **SQL 纯净度与跨步骤引用**：
+    - **严禁**在 SQL 中使用 `JSON_TABLE`、`JSON_KEYS` 或任何尝试解析前序步骤 JSON 输出的函数。MySQL 无法直接访问工具输出。
+    - 如果你需要使用前序步骤的过滤值（如 `stock_code`），请直接从 `之前步骤的结果上下文` 中提取具体数值，并手动填入 SQL 的 `IN (...)` 子句中。
+    - **严禁**在 SQL 块中包含任何非 SQL 的解释、伪代码或未完成的逻辑。
+    - **严禁指标混淆**：在进行多表关联时，**严禁**使用 `COALESCE` 将不同性质的指标（如毛利率、负债率、现金流）合并到同一个别名列中。必须为每个指标指定独立的、具有描述性的别名。
+- **MySQL 规范与反引号**：
+    - 如果列名或别名 (AS) 包含特殊字符（如横杠 `-`、单引号、空格、百分号 `%` 等），**必须**使用反引号包围，例如：`` `增长率%` ``、`` `经营性现金流-现金流量净额` ``。
+    - **强烈建议**：对所有的列名、表名都使用反引号，以避免保留字冲突或特殊字符导致的 1054 错误。
+    - **错误示例**：`x.经营性现金流-现金流量净额` 会被解析为 `x.经营性现金流` 减去 `现金流量净额`，导致列不存在。
+    - **正确示例**：`x.`经营性现金流-现金流量净额``。
+    - 在 `sql_query` 工具中，由于使用 SQLAlchemy，SQL 语句中的百分号 `%` **必须**转义为双百分号 `%%`（例如 `LIKE '2024%%'`），否则会报错。
+    - `CAST` 类型应使用 `SIGNED` 或 `UNSIGNED`，而不是 `INT` 或 `INTEGER`。
+- **JOIN 性能优化 (极重要)**：
+    - **严禁**在 `ON` 或 `WHERE` 子句中使用 `CASE` 表达式进行日期匹配，这会导致全表扫描。
+    - **推荐做法**：如果 `report_period` 和 `report_date` 格式不一致，请先在 `之前步骤的结果上下文` 中观察对应关系，然后使用显式的日期字符串进行匹配。
+    - **示例**：`ON p.stock_code = y.股票代码 AND y.report_date = '20240630'`。
+- **Python 分析规范**：在 `python_analysis` 步骤中，**绝对严禁**使用 `exit()`、`sys.exit()`、`quit()` 或 `os._exit()`，这会导致整个 Agent 进程直接退出。如果遇到数据为空或无法继续分析的情况，请使用 `print(json.dumps({"error": "原因..."}))` 正常结束脚本。
+- **严禁凭空捏造数据**：如果之前的步骤（如 SQL 查询）失败或返回空结果，请在当前步骤中如实报告错误或空结果，**严禁**生成模拟数据（Mock Data）进行后续分析，除非用户明确要求。
+- **数据质量处理 (Python)**：
+    - **慎用均值/中位数填充**：如果某指标缺失率超过 50%，请考虑直接在分析中指出“数据缺失”，而不是盲目填充。
+    - **趋势分析**：对于时间序列数据，优先使用 `interpolate()` 进行插值，而非全局中位数。
+- **Python 退出限制补充**：如果你认为当前步骤无法完成，请**务必**将错误原因写入返回的 JSON 中，并保持脚本执行到最后一行。不要在脚本中间抛出未捕获的异常。
 - **强制性规则：必须确保已探测数据！**
     1. **检查上下文**：在生成任何涉及具体年份或期间（如 2024）的 SQL 前，先检查 `之前步骤的结果上下文`。如果之前的步骤（如 step1）已经执行过 `SELECT DISTINCT report_period` 或类似的探测操作，**直接使用其结果**来编写正式查询 SQL，**严禁**重复执行探测 SQL。
     2. **探测逻辑**：只有在上下文**完全没有**关于 `report_period` 格式或可用范围的信息时，才必须先执行 `SELECT DISTINCT report_period FROM table_name ORDER BY report_period DESC LIMIT 5` 进行探测。
@@ -19,25 +52,115 @@
 - **列名匹配**：请仔细核对数据库结构中的真实列名，不要凭想象猜测（例如：`pv_financials` 使用的是 `company_name` 而不是 `公司名称`）。
 - **ID 警告**：**严禁**盲目使用 `id` 或 `company_id` 进行 JOIN，除非你确定它们是关联的。优先使用 `stock_code`、`ticker`、`股票代码` 等业务主键进行关联。
 - **数据关联**：如果 `pv_financials` 的 `report_period` 是 '2024H1'，而其他表的 `report_date` 是 '20231231' 这种格式，请在 JOIN 时考虑这种差异。
-- **日期/期间匹配规范**：
-    1. **严禁盲目猜测日期或期间**（例如：不要在未确认的情况下使用 `2024H1` 或 `20241231`）。
-    2. **优先查询**：如果不确定表中可用的日期或期间，请先执行一个简单的 `SELECT DISTINCT report_period FROM table_name` 来核实。
-    3. **格式核对**：核对 `report_period` 的真实格式（是 `2023FY` 还是 `2023Q4` 还是 `2023-12-31`）。
-    4. **数据范围核实**：如果用户要求的年份（如 2024-2025）在数据库中不存在，请查询数据库中**最近可用**的完整年度数据进行分析，并在结果中说明。
-- **查询范围**：除非用户明确要求，不要默认限定年份或季度。可以先用 `SELECT * FROM pv_financials ORDER BY report_period DESC LIMIT 200` 获取样本。
-- **注意**：JOIN 条件中应使用确切的匹配逻辑（如 `l.report_date = '20240630'`），**严禁使用会导致笛卡尔积的模糊 OR 条件**。
+- **逻辑运算符优先级**：在 `WHERE` 子句中同时使用 `AND` 和 `OR` 时，**务必使用括号**明确优先级，防止逻辑错误。
+  - **正确示例**：`WHERE (a=1 OR b=2) AND c=3`
+- **JOIN 条件规范**：JOIN 条件中应使用确切的匹配逻辑（如 `l.report_date = '20240630'`），**严禁使用会导致笛卡尔积的模糊 OR 条件**。
+  - 如果需要匹配多个报告期，推荐使用 `JOIN ... ON ... AND (y.report_date = '...' OR y.report_date = '...')` 并确保 `stock_code` 等主键匹配。
+- **数据范围核实**：如果用户要求的年份（如 2024-2025）在数据库中不存在，请查询数据库中**最近可用**的完整年度数据进行分析，并在结果中说明。
 - **回退策略**：如果针对特定年份的查询返回 0 行，请立即尝试查询该表中最晚的 2-3 个年度/季度数据作为替代方案。
-- 请确保 SQL 逻辑严谨，处理好 JOIN 关系。
+- **单条语句原则 (再次强调)**：不要在同一个 ```sql ``` 块中放多个分号分隔的 SQL。
 
 如果是 python_analysis，请输出完整的 Python 代码，放在 ```python 代码块中。
 注意：
 - **context 变量**：`context` 字典已预解析，其中的值直接就是上一步的结果（dict 或 list），**不需要**再手动执行 `json.loads(context['step1'])`。
-- **数据加载规范**：
+- **日期与报告期映射 (核心规则)**：
+    1. **映射关系**：
+       - `'2024H1'` 或 `'2024-06-30'` -> 对应 `report_date` 为 `'20240630'`
+       - `'2023Q4'` 或 `'2023-12-31'` -> 对应 `report_date` 为 `'20231231'`
+       - `'2023Q3'` 或 `'2023-09-30'` -> 对应 `report_date` 为 `'20230930'`
+       - `'2024Q1'` 或 `'2024-03-31'` -> 对应 `report_date` 为 `'20240331'`
+    2. **JOIN 编写建议**：
+       - **严禁**在 `ON` 子句中使用复杂的 `REPLACE` 或字符串截取逻辑。
+       - **推荐做法**：直接根据 `pv_financials` 的 `report_period` 值，在 `ON` 子句中使用 `AND (p.report_period = '2024H1' AND y.report_date = '20240630')` 这种显式匹配方式。
+       - 如果涉及多个报告期，请使用括号包裹：`AND ((p.report_period = '2024H1' AND y.report_date = '20240630') OR (p.report_period = '2023Q4' AND y.report_date = '20231231'))`。
+- **数据过滤与匹配 (极重要)**：
+    1. **使用探测结果**：在执行正式查询前，务必先通过探测步骤确认 `report_period`、`industry_role` 等字段的实际取值。
+    2. **精确匹配 vs 模糊匹配**：如果探测到 `industry_role` 的取值非常具体（如 "HJT龙头"），不要在正式查询中使用宽泛的词（如 "光伏设备"）进行等值匹配，应改用 `LIKE '%光伏%'` 或使用探测到的确切值。
+    3. **处理未来日期**：如果用户要求的年份（如 2025 年）在数据库中尚无数据，请查询**最近可用**的完整年度/季度数据，并在结果中说明数据时间范围的偏差。
+- **Pandas 最佳实践与避坑指南 (极重要)**：
+    1. **列存在性检查**：在对多个列进行操作（如 `df[cols]`）前，务必检查列是否存在。
+       推荐：`existing_cols = [c for c in cols if c in df.columns]; df[existing_cols] = ...`
+    2. **异常值截断 (Capping Outliers)**：
+       使用 `df[col] = df[col].clip(lower=lb, upper=ub)` 进行截断。
+    3. **缺失值处理策略**：
+       - **中位数填充**：对于财务指标，优先使用中位数填充：`df[col] = df[col].fillna(df[col].median())`。
+       - **空列识别**：如果某列全部为 NaN，填充中位数会报警告。请先检查 `if not df[col].isna().all():`。
+       - **删除极度空缺数据**：如果某行核心字段（如 `company_name` 或 `revenue_billion`）全部缺失且无法填充，建议直接 `df.dropna(subset=[...])`。
+    4. **数据类型转换**：从 SQL 提取的数据可能包含 `Decimal` 或 `None`，建议先统一转换：`df[col] = pd.to_numeric(df[col], errors='coerce')`。
+    5. **避免空切片警告**：在使用 `mean()` 或 `median()` 前，确保 Series 不为空。
+- **输出规范**：
+    1. **结论先行**：在代码最后通过 `print()` 输出简洁的分析结论。
+    2. **JSON 输出 (进阶)**：如果后续步骤（如绘图）需要使用当前步骤计算出的指标，请将这些指标以 JSON 格式打印。系统会自动捕获最后输出的 JSON 块。
+       ```python
+       print(json.dumps({"metrics": metrics_dict, "summary": "..."}))
+       ```
+- **数据加载规范 (极重要)**：
     1. `sql_query` 的结果通常是 list[dict]。
     2. 如果上一步结果包含 `error` 或 `warning` 键，请检查。例如：`res = context['step1']; if isinstance(res, dict) and 'warning' in res: ...`。
-    3. 转换为 DataFrame 的推荐方法是：`res = context['step_id']; df = pd.DataFrame(res if isinstance(res, list) else res.get('data', []))`。
-- **列名一致性**：检查 `context` 中上一步输出的真实字段名。如果上一步 SQL 输出的是 `company_name`，则代码中必须使用 `df['company_name']`。
+    3. **鲁棒地转换为 DataFrame**：上一步输出可能是一个 list，也可能是一个包含数据列表的 dict（如 `{"data": [...], "summary": ...}` 或 `{"cleaned_data": [...], ...}`）。
+       **必须**使用以下逻辑加载数据：
+       ```python
+       res = context.get('step_id', [])
+       if isinstance(res, dict):
+           data_list = res.get('data') or res.get('cleaned_data') or res.get('results') or []
+       else:
+           data_list = res
+       df = pd.DataFrame(data_list)
+       ```
+    4. **严禁**直接对可能包含非 Series 对象的字典使用 `pd.DataFrame(res)`，这会导致 `ValueError: Mixing dicts with non-Series may lead to ambiguous ordering`。
+- **SQL 别名与字段规范 (严禁幻觉)**：
+    - **严禁**在 SQL 别名中使用 `%`（如 `营收_%`）。请使用 `营收_pct` 或 `营收_百分比`。
+    - **严禁**猜测字段名。以下为经 `DESC` 验证的**唯一合法**字段名清单（使用时必须加反引号）：
+        - `pv_financials`: `id`, `company_name`, `stock_code`, `industry_role`, `report_period`, `revenue_billion`, `net_profit_billion`, `revenue_growth_pct`, `net_profit_growth_pct`, `gross_margin_pct`, `on_hand_orders_billion`, `update_date` 
+        - **严禁**使用 `is_2024_or_later` 等不存在的列。
+        - `test_em_yjbb`: `销售毛利率`, `净资产收益率`, `营业总收入-营业总收入`, `净利润-净利润`
+        - `test_em_zcfz`: `资产负债率`, `资产-总资产`, `负债-总负债`
+        - `test_em_xjll`: `经营性现金流-现金流量净额`
+    - **严禁**使用如 `sales_margin_pct`, `asset_liability_ratio`, `operating_cashflow` 等任何英文或猜测的字段名。
+- **多表关联分析 (强制要求)**：如果主表（如 `pv_financials`）缺失关键指标（如研发投入、负债率、现金流），**必须**检查并关联其他表。**已知字段名清单 (严格遵守)**：
+    - `test_em_yjbb` (业绩报表): `每股收益`, `营业总收入-营业总收入`, `净利润-净利润`, `销售毛利率`, `净资产收益率`
+    - `test_em_zcfz` (资产负债表): `资产负债率`, `资产-总资产`, `负债-总负债`
+    - `test_em_xjll` (现金流量表): `经营性现金流-现金流量净额`, `投资性现金流-现金流量净额`, `融资性现金流-现金流量净额`
+    - **研发投入**：如果上述表中均无 `研发费用` 字段，请检查 `pv_financials` 是否有该指标；若均无，请在分析中注明“数据不可得”而**严禁**在 SQL 中猜测字段名。
+    - **关联键**：使用 `stock_code` 与 `股票代码` 进行关联。
+    - **日期与报告期映射 (核心规则 - 绝对禁令)**：
+    1. **映射关系 (严格遵守)**：
+       - `'2024H1'` -> 对应 `report_date` 为 `'20240630'`
+       - `'2024Q1'` -> 对应 `report_date` 为 `'20240331'`
+       - `'2023Q4'` -> 对应 `report_date` 为 `'20231231'`
+       - `'2023Q3'` -> 对应 `report_date` 为 `'20230930'`
+       - **注意**：如果探测到 `report_date` 格式为 `'2024-06-30'` (带横杠)，映射关系同理。
+    2. **JOIN 编写建议**：
+       - **严禁**在 `ON` 子句中使用 `REPLACE`、`CONCAT`、`||` 或 `CASE` 进行日期转换。
+       - **必须**在 `ON` 子句中通过硬编码显式匹配 `report_period` 和 `report_date`。
+       - **示例 (正确)**：`ON p.stock_code = y.股票代码 AND ((p.report_period = '2024H1' AND y.report_date = '20240630') OR (p.report_period = '2023Q4' AND y.report_date = '20231231'))`
+       - **示例 (错误)**：`ON p.stock_code = y.股票代码 AND y.report_date = REPLACE(p.report_period, 'H1', '0630')`
+- **探测优先 (强制执行)**：
+    - 在执行正式查询前，如果上下文没有 `report_period` 的具体取值（如 `2024H1` 还是 `20240630`），**必须**先执行 `SELECT DISTINCT report_period FROM pv_financials LIMIT 5` 进行探测。
+    - 严禁凭空猜测 `report_period` 的格式。
+- **内存溢出防御 (防止 Exit Code 137)**：
+    - 如果查询可能返回大量行（如超过 5000 行），**必须**使用 `LIMIT` 限制结果集，或者通过更精确的 `WHERE` 条件（如限制特定行业、特定日期范围）来缩小范围。
+    - 在 `python_analysis` 中，如果 `context` 数据量过大，优先进行采样或聚合分析，避免一次性处理数万行原始数据。
+- **自动计算缺失比例与增速**：
+    - 如果表中找不到现成的比例指标（如 `资产负债率`），但能找到原始数据（如 `负债合计` 和 `资产总计`），**必须**计算。
+    - 如果 `revenue_growth_pct` 缺失，但有本期和上期营收数据，**必须**计算增速：`(本期 - 上期) / ABS(上期) * 100`。
+- **数据真实性校验**：对于 `0.00` 的财务指标（如 `资产负债率`），如果明显不符合行业常识，在 `python_analysis` 中应将其标记为 `NaN` 而不是 `0.0`，以免误导分析。
+- **分类字段过滤 (探测优先)**：
+    - 在 SQL 查询中使用 `WHERE` 子句过滤分类字段（如 `industry_role`、`region`、`所处行业`）前，**必须**先通过 `SELECT DISTINCT` 探测该字段的实际取值。
+    - **严禁**凭直觉猜测分类值（如猜测为 '光伏设备'），这会导致查询结果为空。
+    - 如果你已经执行过探测但发现没有完全匹配的值，请选择最接近的值 or 查询所有相关值进行后续 Python 过滤。
+- **列名一致性 (强制要求)**：在 `python_analysis` 和 `visualizer` 步骤中，**必须**使用 `context` 中前序步骤输出的**真实字段名**。例如，如果上一步 SQL 或 Python 输出的是 `revenue_billion`，你在当前步骤中**严禁**将其简写为 `revenue`。在编写代码前，请务必核对 `之前步骤的结果上下文` 中的 JSON 示例键名。
 - **语法正确性**：确保 Python 代码语法完全正确。
+- **作用域安全**：确保所有变量（如阈值、模型对象）在所有可能的执行路径下都已定义。
+- **禁止使用 `.name` 访问索引**：在遍历 DataFrame（如 `for i, row in df.iterrows()`）时，`row.name` 返回的是行索引。**禁止**将其误用作列名或偏移量进行访问，这会导致 `IndexError`。请始终使用显式的列名（如 `row['column_name']`）。
+- **禁止在布尔上下文中使用 Series/DataFrame**：在 `if` 语句中直接使用 Pandas 的 `Series` 或 `DataFrame` 会导致 `ValueError: The truth value of a Series is ambiguous`。**必须**使用 `.empty`、`.any()`、`.all()` 或 `.is_null().all()` 等明确的布尔转换。
+- **严禁使用 `exit()`**：无论是在 `python_analysis` 还是 `visualizer` 的 `plot_code` 中，**严禁**使用 `exit()`、`sys.exit()`、`quit()` 或任何会导致进程终止的函数。如果缺少数据或遇到错误，请使用 `print()` 或在图表中显示提示信息，但必须保证脚本能运行到最后。
+- **空数据与异常值防御 (重要)**：
+    - **严禁在 Python 中直接返回 JSON 错误对象**。你必须生成完整的 Python 代码，在代码中检查 `context` 中的数据。
+    - 如果上一步的数据为空或包含错误，你的 Python 代码应打印一个包含错误信息的 JSON 字符串，例如：`print(json.dumps({"error": "No data found for the specified period"}))`。
+    - 在执行 `np.percentile`、`StandardScaler.fit_transform` 等操作前，**必须**检查输入数组是否为空或全为 NaN。
+    - 如果数据量不足（例如少于 2 行），请跳过统计建模，并返回说明。
+- **增长率计算规范**：计算同比增长 (YoY) 或环比 (MoM) 时，推荐使用 `df.groupby('company')['val'].shift(1)` 或 `pd.merge` 关联历史数据，**严禁**手动编写复杂的索引偏移逻辑。
 - **禁止中断**：不要调用 `exit()` 或 `quit()`，如需停止请 `print()` 返回结果。
 - **如果你的 Python 代码产生的数据需要给后续步骤使用，请务必使用 `print(json.dumps(data_dict))` 输出 JSON 字符串。**
 - **注意：JSON 无法直接序列化 Pandas 的 Timestamp 或 numpy.int64 等对象。请在输出前使用 `.astype(str)` 或 `.tolist()` 进行转换，或者使用 `json.dumps(..., default=str)` 处理。**
@@ -61,10 +184,18 @@
 如果是 visualizer，请输出 Python 绘图代码 and 建议的文件名，格式必须为 JSON: 
 ```json 
 {
-  "plot_code": "...", 
+  "plot_code": "import matplotlib.pyplot as plt\nimport seaborn as sns\n...", 
   "filename": "..."
 } 
 ```
 注意：
 - 绘图时可以直接使用中文标签，系统已配置中文字体支持.
-- **严禁**在 `plot_code` 中包含 `plt.savefig()`，系统会自动处理保存逻辑。
+- **严禁**在 `plot_code` 中包含 `plt.savefig()` 或 `plt.show()`，系统会自动处理保存逻辑。
+- **Python 作用域安全 (核心原则)**：
+    - 在 `plot_code` 字符串内部编写 Python 代码时，**必须**遵循以下缩进 and 变量引用规则：
+    - **严禁**引用未定义的变量。
+    - **严禁**在 `lambda` 函数或列表推导式中直接引用外部变量（如 `df`），这在 `exec()` 环境下会报 `NameError`。
+    - **正确做法**：如果必须使用 `lambda`，请显式传入变量：`lambda x, df=df: x + df['val'].mean()`。
+    - **数据加载**：推荐在 `plot_code` 开头通过 `context` 加载数据：`res = context.get('step_id', []); df = pd.DataFrame(res)`。
+- **异常上下文处理**：如果 `context` 中的前序步骤（如数据清洗或建模）返回了 `error`，**严禁**生成模拟数据绘图。你应该在 `plot_code` 中绘制一张包含错误说明文字的空白图，或在 `visualizer` 外部返回错误信息，并在报告中如实说明。
+- **引用安全**：`plot_code` 中引用 `context` 变量时，请务必先检查其内容是否存在。推荐使用 `context.get('step_id', {})`。
