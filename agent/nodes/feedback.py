@@ -1,3 +1,7 @@
+"""反馈处理节点，负责处理用户对计划或结果的反馈。
+
+该模块根据用户的输入决定是继续执行还是重新规划。
+"""
 from typing import Dict, Any
 from agent.state import AgentState
 from agent.utils import setup_logger
@@ -5,7 +9,16 @@ from agent.utils import setup_logger
 logger = setup_logger("feedback_node")
 
 def handle_feedback(state: AgentState) -> Dict[str, Any]:
-    """处理用户反馈"""
+    """处理用户反馈。
+
+    解析用户的最后一条消息，判断用户是否同意当前的计划或结果。
+
+    Args:
+        state: 当前的代理状态。
+
+    Returns:
+        包含 is_approved, awaiting_approval 和 history 的字典。
+    """
     last_message = state['history'][-1]['content'] if state['history'] else ""
     logger.info(f"收到用户反馈: {last_message}")
     
