@@ -1,3 +1,8 @@
+"""工具函数模块，提供日志配置、模型加载、文本处理和向量嵌入等通用功能。
+
+该模块封装了多种 LLM 服务（ModelScope, SiliconFlow）的调用接口，
+并提供了一些辅助函数，如 Markdown 转纯文本、加载提示词模板等。
+"""
 import json
 import logging
 import os
@@ -29,7 +34,18 @@ SiliconFlow_API_KEY_LIST = os.getenv("SILICONFLOW_API_KEYS", "").split(",")
 SiliconFlow_API_KEY_LIST = [key for key in SiliconFlow_API_KEY_LIST if key]
 
 def setup_logger(name: Optional[str] = None, log_file: Optional[str] = None, level=logging.INFO, console_output: bool = True, clear_existing: bool = False):
-    """设置 Logger，支持输出到控制台和文件"""
+    """设置 Logger，支持输出到控制台和文件。
+
+    Args:
+        name: Logger 名称。
+        log_file: 日志文件路径。
+        level: 日志级别。
+        console_output: 是否输出到控制台。
+        clear_existing: 是否清除现有的 Handler。
+
+    Returns:
+        配置好的 Logger 对象。
+    """
     # 如果没有提供名字，或者名字为空，则配置根日志记录器
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -61,6 +77,7 @@ def setup_logger(name: Optional[str] = None, log_file: Optional[str] = None, lev
     return logger
 
 def _normalize_base_url(base_url: Optional[str]) -> Optional[str]:
+    """规范化 API 基础 URL，确保以斜杠结尾。"""
     if not base_url:
         return base_url
     # Most LangChain OpenAI-compatible clients expect a trailing slash, e.g. ".../v1/".
@@ -74,6 +91,18 @@ def get_model_from_name(
     late_time: float = 0.5,
     **kwargs,
 ):
+    """根据模型名称自动选择合适的加载函数。
+
+    Args:
+        model: 模型名称。
+        api_key: API 密钥。
+        base_url: API 基础 URL。
+        late_time: 调用前的延迟时间（秒），用于频率限制。
+        **kwargs: 传递给 LLM 客户端的其他参数。
+
+    Returns:
+        初始化的 LLM 对象。
+    """
     if "instruct" in model.lower():
         return llm_qwen(model=model, api_key=api_key, base_url=base_url, late_time=late_time, **kwargs)
     elif "thinking" in model.lower():
@@ -87,6 +116,7 @@ def llm_qwq(model: str = MODEL,
     late_time: float = 0.5,
     **kwargs,
 ):
+    """加载 QwQ (Thinking) 模型。"""
     if not api_key:
         api_key = random.choice(MODELSCOPE_API_KEY_LIST)
     if not base_url:
@@ -111,6 +141,7 @@ def llm_qwen(
     late_time: float = 0.5,
     **kwargs,
 ):
+    """加载 Qwen (Instruct) 模型。"""
     if not api_key:
         api_key = random.choice(MODELSCOPE_API_KEY_LIST)
     if not base_url:
@@ -138,6 +169,7 @@ def llm_modelscope(
     late_time: float = 0.5,
     **kwargs,
 ):
+    """加载 ModelScope 上的 OpenAI 兼容模型。"""
     if not api_key:
         api_key = random.choice(MODELSCOPE_API_KEY_LIST)
     if not base_url:
@@ -161,6 +193,7 @@ def llm_siliconflow(
     late_time: float = 0.5,
     **kwargs,
 ):
+    """加载 SiliconFlow 上的 OpenAI 兼容模型。"""
     if not api_key:
         api_key = random.choice(SiliconFlow_API_KEY_LIST)
     if not base_url:
@@ -180,14 +213,15 @@ def llm_siliconflow(
 import re
 
 def md2txt(md_text: str) -> str:
-    """
-    将Markdown文本转换为纯文本
-    
+    """将 Markdown 文本转换为纯文本。
+
+    通过正则表达式移除代码块、标题、粗体、链接、列表等 Markdown 标记。
+
     Args:
-        md_text: 包含Markdown格式的文本
-        
+        md_text: 包含 Markdown 格式的文本。
+
     Returns:
-        转换后的纯文本
+        转换后的纯文本。
     """
     # 移除代码块 (```code```)
     plain_text = re.sub(r'```.*?```', '', md_text, flags=re.DOTALL)
@@ -233,7 +267,17 @@ def md2txt(md_text: str) -> str:
 
 
 def load_prompt(prompt_name: str) -> str:
-    """从 agent/prompts 目录加载 prompt 模板"""
+    """从 agent/prompts 目录加载 prompt 模板。
+
+    Args:
+        prompt_name: 提示词文件的名称（不含扩展名）。
+
+    Returns:
+        文件内容字符串。
+
+    Raises:
+        FileNotFoundError: 如果提示词文件不存在。
+    """
     prompt_path = os.path.join(os.path.dirname(__file__), 'prompts', f"{prompt_name}.txt")
     if not os.path.exists(prompt_path):
         raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
@@ -242,7 +286,14 @@ def load_prompt(prompt_name: str) -> str:
 
 
 class SiliconFlowEmbeddings(BaseModel, Embeddings):
-    """硅基流动词向量模型适配器"""
+    """硅基流动词向量模型适配器。
+
+    Attributes:
+        model: 要使用的模型名称。
+        api_key: API 密钥。
+        base_url: API 的基础 URL。
+        batch_size: 每批处理的文本数量。
+    """
     
     model: str = Field(default="BAAI/bge-m3", description="要使用的模型名称")
     api_key: Optional[str] = Field(default=None, description="API密钥")
@@ -250,13 +301,21 @@ class SiliconFlowEmbeddings(BaseModel, Embeddings):
     batch_size: int = Field(default=4, description="每批处理的文本数量")
     
     def get_api_key(self):
+        """获取并随机选择一个 API 密钥。"""
         if not self.api_key:
             self.api_key = random.choice(SiliconFlow_API_KEY_LIST)
         
         return self.api_key
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """为多个文本生成嵌入向量，支持批量处理"""
+        """为多个文本生成嵌入向量，支持批量处理。
+
+        Args:
+            texts: 要嵌入的文本列表。
+
+        Returns:
+            嵌入向量列表。
+        """
         all_embeddings = []
         
         # 分批处理文本
@@ -298,6 +357,13 @@ class SiliconFlowEmbeddings(BaseModel, Embeddings):
         return all_embeddings
     
     def embed_query(self, text: str) -> List[float]:
-        """为单个文本生成嵌入向量"""
+        """为单个文本生成嵌入向量。
+
+        Args:
+            text: 要嵌入的文本。
+
+        Returns:
+            嵌入向量。
+        """
         # 对于单个文本，我们仍然使用embed_documents方法
         return self.embed_documents([text])[0]
