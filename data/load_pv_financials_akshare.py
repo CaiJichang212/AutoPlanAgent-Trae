@@ -1,3 +1,8 @@
+"""光伏公司财务数据加载工具，通过 AkShare 从东方财富获取数据并存入 MySQL。
+
+该脚本支持获取 A 股公司的业绩报表、资产负债表、利润表和现金流量表，
+并将数据规范化后存入指定的数据库表中。
+"""
 import argparse
 import datetime as dt
 import os
@@ -10,6 +15,7 @@ from sqlalchemy import create_engine, text, inspect
 
 
 def _import_akshare():
+    """导入 akshare 库并处理缺失情况。"""
     try:
         import akshare as ak  # type: ignore
     except Exception as exc:
@@ -18,6 +24,7 @@ def _import_akshare():
 
 
 def _build_engine() -> object:
+    """根据环境变量构建 SQLAlchemy 数据库引擎。"""
     url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
     if not url:
         host = os.getenv("MYSQL_HOST")
@@ -33,6 +40,7 @@ def _build_engine() -> object:
 
 
 def _daterange(start_year: int, end_year: int, annual_only: bool) -> List[str]:
+    """生成指定年份范围内的财报日期列表。"""
     dates = []
     for y in range(start_year, end_year + 1):
         if annual_only:
@@ -43,6 +51,7 @@ def _daterange(start_year: int, end_year: int, annual_only: bool) -> List[str]:
 
 
 def _safe_call(ak, func_names: List[str], **kwargs):
+    """安全地调用 akshare 的多个备选函数名。"""
     last_exc = None
     for name in func_names:
         if hasattr(ak, name):
@@ -57,6 +66,7 @@ def _safe_call(ak, func_names: List[str], **kwargs):
 
 
 def _get_code_map(ak) -> pd.DataFrame:
+    """获取所有 A 股股票代码和名称的映射表。"""
     try:
         df = _safe_call(ak, ["stock_info_a_code_name"])
         df = df.rename(columns={"code": "代码", "name": "名称"})
@@ -84,6 +94,7 @@ def _get_code_map(ak) -> pd.DataFrame:
 
 
 def _match_codes(code_map: pd.DataFrame, company_names: List[str]) -> Dict[str, str]:
+    """根据公司名称匹配股票代码。"""
     mapping: Dict[str, str] = {}
     code_map["名称"] = code_map["名称"].astype(str)
     code_map["代码"] = code_map["代码"].astype(str)
@@ -106,6 +117,7 @@ def _match_codes(code_map: pd.DataFrame, company_names: List[str]) -> Dict[str, 
 
 
 def _filter_targets(df: pd.DataFrame, codes: List[str]) -> pd.DataFrame:
+    """从 DataFrame 中筛选出目标股票代码的数据。"""
     if "股票代码" in df.columns:
         key = "股票代码"
     elif "代码" in df.columns:
@@ -116,11 +128,13 @@ def _filter_targets(df: pd.DataFrame, codes: List[str]) -> pd.DataFrame:
 
 
 def _ensure_report_date(df: pd.DataFrame, report_date: str) -> pd.DataFrame:
+    """确保 DataFrame 包含报告日期列。"""
     df["report_date"] = report_date
     return df
 
 
 def _pick_col(df: pd.DataFrame, candidates: List[str]) -> str:
+    """从候选列名中选择第一个存在于 DataFrame 中的列。"""
     for col in candidates:
         if col in df.columns:
             return col
@@ -128,6 +142,7 @@ def _pick_col(df: pd.DataFrame, candidates: List[str]) -> str:
 
 
 def _clean_numeric(series: pd.Series) -> pd.Series:
+    """清理并转换数值型 Series。"""
     cleaned = series.astype(str)
     cleaned = cleaned.str.replace(",", "", regex=False)
     cleaned = cleaned.str.replace("%", "", regex=False)
@@ -135,6 +150,7 @@ def _clean_numeric(series: pd.Series) -> pd.Series:
 
 
 def _to_billion(series: pd.Series) -> pd.Series:
+    """将数值 Series 转换为以“亿元”为单位。"""
     numeric = _clean_numeric(series)
     if numeric.dropna().empty:
         return numeric
@@ -145,6 +161,7 @@ def _to_billion(series: pd.Series) -> pd.Series:
 
 
 def _ensure_pv_financials_table(engine, table: str) -> None:
+    """确保目标财务汇总表存在。"""
     sql = f"""
     CREATE TABLE IF NOT EXISTS `{table}` (
         id INTEGER AUTO_INCREMENT PRIMARY KEY,
@@ -166,6 +183,7 @@ def _ensure_pv_financials_table(engine, table: str) -> None:
 
 
 def _build_pv_financials_frame(df: pd.DataFrame, report_date: str, mapping: Dict[str, str]) -> pd.DataFrame:
+    """根据原始报表数据构建汇总后的财务 DataFrame。"""
     if df.empty:
         return df.iloc[0:0]
     code_to_name = {v: k for k, v in mapping.items()}
@@ -203,6 +221,7 @@ def _build_pv_financials_frame(df: pd.DataFrame, report_date: str, mapping: Dict
 
 
 def _upsert_pv_financials(engine, table: str, df: pd.DataFrame) -> None:
+    """以更新或插入（Upsert）的方式将财务数据写入汇总表。"""
     if df.empty:
         return
     with engine.begin() as conn:
@@ -218,6 +237,7 @@ def _upsert_pv_financials(engine, table: str, df: pd.DataFrame) -> None:
 
 
 def _upsert_table(engine, table: str, df: pd.DataFrame, report_date: str, codes: List[str]) -> None:
+    """以更新或插入的方式将原始报表数据写入数据库。"""
     if df.empty:
         return
     insp = inspect(engine)
@@ -234,6 +254,7 @@ def _upsert_table(engine, table: str, df: pd.DataFrame, report_date: str, codes:
 
 
 def main() -> None:
+    """主函数：解析参数、匹配公司、抓取数据并存入数据库。"""
     parser = argparse.ArgumentParser(description="Load PV company financials from Eastmoney via AkShare into MySQL")
     parser.add_argument(
         "--companies",
