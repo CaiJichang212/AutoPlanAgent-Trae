@@ -1,3 +1,10 @@
+"""光伏行业数据准备脚本，用于初始化 MySQL 数据库并加载样例财报数据。
+
+该脚本主要负责：
+1. 从环境变量解析 MySQL 连接配置。
+2. 创建数据库（如果不存在）和光伏企业财报表（pv_financials）。
+3. 向表中插入 2024H1 的光伏行业头部企业样例数据。
+"""
 import mysql.connector
 import json
 import os
@@ -5,6 +12,11 @@ import re
 from datetime import date
 
 def setup_database():
+    """初始化数据库并加载样例数据。
+
+    该函数会尝试从环境变量中获取数据库连接信息，创建必要的表，
+    并插入预定义的光伏企业财务数据。
+    """
     # 优先从 DATABASE_URL 解析配置
     db_url = os.getenv("DATABASE_URL")
     if db_url and db_url.startswith("mysql"):
