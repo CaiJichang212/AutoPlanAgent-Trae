@@ -1,7 +1,15 @@
+"""智能体端到端测试脚本。
+
+该脚本模拟了用户与智能体的交互流程：
+1. 启动任务并获取初步理解和计划。
+2. 模拟用户确认计划并触发执行。
+3. 追踪各节点的运行状态并打印最终生成的分析报告。
+"""
 from agent.graph import graph
 import uuid
 
 def run_test():
+    """执行智能体端到端测试。"""
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     
