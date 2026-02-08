@@ -1,17 +1,43 @@
 import mysql.connector
 import json
 import os
+import re
 from datetime import date
 
 def setup_database():
-    # 数据库配置
-    config = {
-        'host': os.getenv('MYSQL_HOST', 'localhost'),
-        'port': int(os.getenv('MYSQL_PORT', '3306')),
-        'user': os.getenv('MYSQL_USER', 'root'),
-        'password': os.getenv('MYSQL_PASSWORD', ''),
-        'database': os.getenv('MYSQL_DB', 'test_trae')
-    }
+    # 优先从 DATABASE_URL 解析配置
+    db_url = os.getenv("DATABASE_URL")
+    if db_url and db_url.startswith("mysql"):
+        # 格式: mysql+pymysql://user:password@host:port/database
+        pattern = r"mysql(?:\+pymysql)?://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/([^?]+)"
+        match = re.match(pattern, db_url)
+        if match:
+            user, password, host, port, database = match.groups()
+            config = {
+                'host': host,
+                'port': int(port) if port else 3306,
+                'user': user,
+                'password': password,
+                'database': database
+            }
+        else:
+            # 回退到原有逻辑
+            config = {
+                'host': os.getenv('MYSQL_HOST', 'localhost'),
+                'port': int(os.getenv('MYSQL_PORT', '3306')),
+                'user': os.getenv('MYSQL_USER', 'root'),
+                'password': os.getenv('MYSQL_PASSWORD', ''),
+                'database': os.getenv('MYSQL_DB', 'test_trae')
+            }
+    else:
+        # 数据库配置
+        config = {
+            'host': os.getenv('MYSQL_HOST', 'localhost'),
+            'port': int(os.getenv('MYSQL_PORT', '3306')),
+            'user': os.getenv('MYSQL_USER', 'root'),
+            'password': os.getenv('MYSQL_PASSWORD', ''),
+            'database': os.getenv('MYSQL_DB', 'test_trae')
+        }
     
     # 建立连接（先不指定数据库以确保能创建它）
     try:
