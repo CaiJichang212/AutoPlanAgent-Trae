@@ -1,3 +1,7 @@
+"""执行节点，负责根据计划执行具体的任务步骤。
+
+该模块包含执行任务、提取代码块、解析 JSON 以及规范化上下文等功能。
+"""
 from typing import Dict, Any, List
 from langchain_core.messages import HumanMessage, SystemMessage
 from agent.state import AgentState, TaskStep
@@ -15,7 +19,15 @@ logger = setup_logger("execution_node")
 _current_context = None
 
 def extract_code(text: str, lang: str) -> str:
-    """从文本中提取指定语言的代码块"""
+    """从文本中提取指定语言的代码块。
+
+    Args:
+        text: 包含代码块的原始文本。
+        lang: 指定的代码语言（如 'python', 'sql', 'json'）。
+
+    Returns:
+        提取出的代码字符串。如果没有匹配到，则尝试返回通用代码块或清理后的文本。
+    """
     # 优先匹配指定语言的代码块
     pattern = f"```{lang}\n?(.*?)\n?```"
     match = re.search(pattern, text, re.DOTALL)
@@ -33,6 +45,14 @@ def extract_code(text: str, lang: str) -> str:
     return text.strip().strip('`').strip()
 
 def extract_first_json(text: str):
+    """从文本中提取第一个有效的 JSON 对象或数组。
+
+    Args:
+        text: 包含 JSON 的文本。
+
+    Returns:
+        解析后的 JSON 对象（字典或列表），如果未找到则返回 None。
+    """
     if not isinstance(text, str):
         return None
     stripped = text.strip()
@@ -61,6 +81,16 @@ def extract_first_json(text: str):
     return None
 
 def extract_last_json(text: str):
+    """从文本中提取最后一个有效的 JSON 对象或数组。
+
+    通常用于处理 LLM 在输出代码或结果后又添加了额外说明的情况。
+
+    Args:
+        text: 包含 JSON 的文本。
+
+    Returns:
+        解析后的 JSON 对象，优先返回包含特定键（如 'data', 'result'）的对象。
+    """
     if not isinstance(text, str):
         return None
     
@@ -102,7 +132,14 @@ def extract_last_json(text: str):
     return results[-1]
 
 def get_normalized_context(raw_context: Dict[str, Any]) -> Dict[str, Any]:
-    """预解析 context 中的 JSON 字符串，并进行字段别名规范化"""
+    """预解析 context 中的 JSON 字符串，并进行字段别名规范化。
+
+    Args:
+        raw_context: 原始上下文字典，值可能是字符串形式的 JSON。
+
+    Returns:
+        规范化后的上下文字典，其中特定的财务字段会被映射到统一的别名。
+    """
     parsed_context = {}
     for k, v in raw_context.items():
         try:
@@ -165,7 +202,17 @@ def get_normalized_context(raw_context: Dict[str, Any]) -> Dict[str, Any]:
     return normalized_context
 
 def execute_step(state: AgentState) -> Dict[str, Any]:
-    """动态执行当前计划中的步骤"""
+    """动态执行当前计划中的步骤。
+
+    根据 state 中的 current_step_index 获取当前步骤，调用 LLM 生成执行代码/指令，
+    并调用相应的工具（SQL, Python, Visualizer）获取结果。
+
+    Args:
+        state: 当前的代理状态。
+
+    Returns:
+        包含更新后的 plan、current_step_index、context 和 history 的字典。
+    """
     plan = state['plan']
     idx = state['current_step_index']
     
