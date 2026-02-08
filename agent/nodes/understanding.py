@@ -1,3 +1,7 @@
+"""任务理解节点，负责解析用户的原始输入并提取结构化的任务信息。
+
+该模块利用 LLM 将模糊的用户需求转化为包含目标、数据范围、指标和约束的结构化表示。
+"""
 from typing import Dict, Any
 from pydantic import BaseModel, Field
 from agent.state import AgentState
@@ -6,6 +10,16 @@ from agent.utils import get_model_from_name, setup_logger, load_prompt
 logger = setup_logger("understand_node")
 
 class TaskUnderstanding(BaseModel):
+    """任务理解结果模型。
+
+    Attributes:
+        goal: 分析目标。
+        data_scope: 数据范围。
+        time_dimension: 时间维度。
+        business_context: 业务背景。
+        key_metrics: 关键分析指标。
+        constraints: 分析约束或特殊要求。
+    """
     goal: str = Field(description="分析目标")
     data_scope: str = Field(description="数据范围")
     time_dimension: str = Field(description="时间维度")
@@ -14,7 +28,16 @@ class TaskUnderstanding(BaseModel):
     constraints: list[str] = Field(description="分析约束或特殊要求")
 
 def understand_task(state: AgentState) -> Dict[str, Any]:
-    """任务理解与解析模块"""
+    """任务理解与解析模块。
+
+    将用户的原始文本输入通过 LLM 解析为 TaskUnderstanding 结构化对象。
+
+    Args:
+        state: 当前的代理状态。
+
+    Returns:
+        包含 understanding 模型数据和其他初始化状态字段的字典。
+    """
     logger.info(f"开始理解任务: {state.get('input', '')[:50]}...")
     llm = get_model_from_name()
     structured_llm = llm.with_structured_output(TaskUnderstanding)
