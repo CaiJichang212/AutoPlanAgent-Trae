@@ -1,3 +1,8 @@
+"""报告生成节点，负责整合所有分析结果并生成最终的结构化报告。
+
+该模块将执行阶段产生的文本结果和图表信息汇总，利用 LLM 填充预设的报告模板，
+并将生成的 Markdown 报告保存到本地文件系统中。
+"""
 from typing import Dict, Any
 from agent.state import AgentState
 from agent.utils import get_model_from_name, setup_logger, load_prompt
@@ -8,7 +13,17 @@ import datetime
 logger = setup_logger("reporting_node")
 
 def generate_report(state: AgentState) -> Dict[str, Any]:
-    """整合所有分析结果，自动生成结构化报告"""
+    """整合所有分析结果，自动生成结构化报告。
+
+    从 state 中提取执行结果和生成的图表路径，结合报告模板，
+    利用 LLM 生成最终的分析报告，并将其保存为 Markdown 文件。
+
+    Args:
+        state: 当前的代理状态。
+
+    Returns:
+        包含生成的 report 内容和 history 的字典。
+    """
     logger.info("正在生成最终分析报告...")
     llm = get_model_from_name()
     
@@ -63,6 +78,7 @@ def generate_report(state: AgentState) -> Dict[str, Any]:
     report = llm.invoke(prompt).content
     
     # 保存报告到 reports/files
+    report_path = "unknown"
     try:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         report_filename = f"report_{timestamp}.md"
