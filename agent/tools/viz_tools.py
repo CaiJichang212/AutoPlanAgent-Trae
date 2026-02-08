@@ -1,3 +1,8 @@
+"""可视化工具，提供图表生成和保存功能。
+
+该模块使用 matplotlib 和 seaborn 生成图表，并根据运行平台自动配置中文字体。
+生成的图表会保存到项目的 reports/images 目录下。
+"""
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -21,11 +26,15 @@ from langchain_experimental.utilities import PythonREPL
 
 @tool
 def visualizer(plot_code: str, filename: str, context: Dict[str, Any] = None) -> str:
-    """
-    根据提供的 matplotlib/seaborn 代码生成图表。
-    plot_code: 绘图的 python 代码。
-    filename: 保存图片的文件名（建议仅提供文件名，如 'plot.png'）。
-    context: 前序步骤的上下文数据。
+    """根据提供的 matplotlib/seaborn 代码生成图表。
+
+    Args:
+        plot_code: 绘图的 python 代码。
+        filename: 保存图片的文件名（建议仅提供文件名，如 'plot.png'）。
+        context: 前序步骤的上下文数据。
+
+    Returns:
+        JSON 格式的结果字符串，包含状态、保存路径和执行输出。
     """
     # 获取项目根目录 (agent/tools/viz_tools.py -> agent/tools/ -> agent/ -> root/)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
