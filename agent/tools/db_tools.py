@@ -13,6 +13,7 @@ def get_db():
     return SQLDatabase.from_uri(DB_URL)
 
 import json
+import time
 from sqlalchemy import text
 
 @tool
@@ -20,6 +21,7 @@ def sql_query(query: str) -> str:
     """在数据库上执行 SQL 查询并返回 JSON 格式的结果列表。"""
     print(f"\n[SQL Query on {DB_URL}]: {query}\n")
     db = get_db()
+    start_time = time.time()
     try:
         # 使用 sqlalchemy 直接执行以获取字典格式
         engine = db._engine
@@ -29,6 +31,8 @@ def sql_query(query: str) -> str:
             # 如果是 DDL/DML 语句，返回成功提示
             if not result.returns_rows:
                 connection.commit()
+                duration = time.time() - start_time
+                print(f"[SQL Duration]: {duration:.2f}s")
                 return json.dumps({"status": "success", "message": "Query executed successfully (no rows returned)"}, ensure_ascii=False)
 
             # 限制返回行数，防止大数据量导致 OOM 或 Token 溢出
@@ -38,13 +42,17 @@ def sql_query(query: str) -> str:
                     break
                 rows.append(dict(row._mapping))
             
+            duration = time.time() - start_time
+            print(f"[SQL Duration]: {duration:.2f}s, Rows: {len(rows)}")
+            
             if not rows:
                 return json.dumps({"warning": "Query returned 0 rows", "data": []}, ensure_ascii=False)
                 
             return json.dumps(rows, ensure_ascii=False, default=str)
     except Exception as e:
         error_msg = str(e)
-        print(f"[SQL Error]: {error_msg}")
+        duration = time.time() - start_time
+        print(f"[SQL Error after {duration:.2f}s]: {error_msg}")
         return json.dumps({"error": error_msg}, ensure_ascii=False)
 
 @tool
