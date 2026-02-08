@@ -12,8 +12,10 @@ logger = setup_logger("agent_graph")
 
 def should_continue_execution(state: AgentState):
     """判断是否继续执行步骤或结束"""
-    if state.get("errors"):
-        logger.error(f"任务执行出错: {state['errors'][-1]}")
+    # 即使有错误，也尝试继续执行，让 LLM 在下一步尝试自修复或报告错误
+    # 除非错误数量过多，防止无限循环（虽然这里是线性执行，但以防万一）
+    if len(state.get("errors", [])) > 3:
+        logger.error(f"错误过多，停止执行: {state['errors']}")
         return "end"
     
     if state["current_step_index"] < len(state["plan"]):
